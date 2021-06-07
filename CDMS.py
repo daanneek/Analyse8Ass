@@ -189,9 +189,26 @@ def checkNewPassword(userId):
         print(psw + " is not a valid password, please try again")
         checkNewPassword()
 
+def createUser(role: str):
+    userName = input("Enter Username for the new " + role + ": ")
+    password = input("Enter Password for the new " + role + ": ")
+    if validateUserInput(userName) and validatePassword(password):
+        print("Adding " + role)
+        #check if username already exists
+        queryDatabase('''INSERT INTO accounts(username, password, type) VALUES (:username, :password, :role)''', 
+        {
+            "username":userName, 
+            "password":password, 
+            "role": role
+        }
+    )
+        logAction("A new user was added", "Details: " + userName + ", " + role, False) 
 
 def checkProperPassword(psw):
     return bool(re.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@#$%^&*_\-+=`|\(){\}[\]:;'<>,.?\/\.])(?=.{8,30})").match(psw))
+
+def checkProperUserName(usrName):
+    return bool(re.match("^[a-z][\w'\.]{5,20}/gm", usrName, re.IGNORECASE))
 
 def getAvailableOptions(userRole: str) -> None:
     if Session["loggedIn"]:
@@ -283,21 +300,6 @@ def validateBlacklist(input):
 def validateWhiteList(input):
     '''returns True if input is valid '''
     return bool(re.match("^[a-zA-Z0-9@. ]+$", input))
-
-def createUser(role: str):
-    userName = input("Enter Username for the new " + role + ": ")
-    password = input("Enter Password for the new " + role + ": ")
-    if validateUserInput(userName) and validatePassword(password):
-        print("Adding " + role)
-        #check if username already exists
-        queryDatabase('''INSERT INTO accounts(username, password, type) VALUES (:username, :password, :role)''', 
-        {
-            "username":userName, 
-            "password":password, 
-            "role": role
-        }
-    )
-        logAction("A new user was added", "Details: " + userName + ", " + role, False) 
 
 def checkServerGeneratedInput(options: dict, input):
     if input not in list(options.keys()):
@@ -402,10 +404,12 @@ def bindColumns(sql:str, item):
     return sql
 
 def createAdvisor():
-    createUser("advisor")
+    if checkRole(1) and checkSession:
+        createUser("advisor")
 
 def createAdmin():
-    createUser("admin")
+    if checkSession() and checkRole(0):
+        createUser("admin")
 
 def checkAccountsInDatabase():
     result: list = queryDatabase('''SELECT username, type FROM accounts''')
