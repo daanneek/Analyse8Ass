@@ -1,9 +1,12 @@
 import sqlite3
 from os import path
+import os
 import re
 import pprint
 import datetime
 import time
+import sys
+from shutil import copyfile
 #print(sqlite3.connect('database.db').cursor().execute('''SELECT * FROM accounts''', {}).fetchall())
 
 # To update their own password
@@ -67,6 +70,7 @@ Session = {
 # Session["userName"] = "daanneek"
 # Session["loggedIn"] = not Session["loggedIn"]
 #Encrypt all values
+
 def queryDatabase(query:str, param:dict={}):
     '''Deletes and Updates return an empty list'''
     con = sqlite3.connect('database.db')
@@ -91,7 +95,9 @@ if not (path.exists("database.db")):
     cur.execute('''CREATE TABLE accounts (id INTEGER PRIMARY KEY, username, password, type)''')
     cur.execute('''INSERT INTO accounts(username, password, type) VALUES ('h&~s-:BKNp','6t{w)Yop', 'h&~s-:BKNp')''')
     con.commit()
-
+    if not (path.exists("./backups")):
+        os.makedirs("./backups")
+    
 
 # inlog gegevens
 
@@ -110,8 +116,8 @@ def retrieveAccount(userName:str, password: str):
     user = queryDatabase('''SELECT * FROM accounts WHERE username=:name AND password=:pass''' , {"name":userName, "pass":password})
     return None if user == [] else user
  
-def printSession():
-    print(Session)
+def returnAccountByUsername(username:str):
+    return queryDatabase('''SELECT * FROM accounts WHERE username=:user''', {"user":username})
 
 def countdown(t:int):
     while t:
@@ -145,74 +151,165 @@ def accountActionAttempt(attempt: int, action: str, onValidationFail, onSucces, 
             print("🖕😂🖕 timeout left:")
             countdown(30)
             onValidationFail()
-    
+
 def logIn():
     accountActionAttempt(3, "Login", logIn, lambda x : Session.update({"userName":x[1], "userRole":x[3], "loggedIn":True}), ("",""))
 
 def changeOwnPassword():
-    
     def refresh():
         logOut()
         logIn()
 
     def changePassword(userAcc):
         id, usrName, oldPsw, accType = userAcc
-        checkNewPassword(id)
+        updatePassword(id)
 
     if checkRole(3):
         if checkSession():
             accountActionAttempt(3, "Confirm old password", refresh, changePassword)
 
-def checkNewPassword(userId):
-    psw = input("Please provide a new password")
-    if checkProperPassword(psw):
-        if validatePassword(psw):
-            repeatPsw = input("Please repeat the new password")
-            if validatePassword(repeatPsw):
-                if psw == repeatPsw:
-                    queryDatabase('''UPDATE accounts SET password=:newPassword WHERE id=:id''' , {"id": userId, "newPassword": psw})
-                    return
-                else:
-                    print("Passwords do not match, please try again")
-                    checkNewPassword()
-            else:
-                logAction("Attack on new password field", psw, True)
-                print("🖕😂🖕 timeout left:")
-                countdown(30)
+def otherAccountActionAttempt(action: str, onValidationFail, onSucces, role: str):
+    # validate inputs
+    userName = input("Enter a Username to be changed: ")
+    if validateUserInput(userName):
+        accounts = returnAccountByUsername(userName)
+        if len(accounts):
+            RetrievedAccount = accounts[0]
+            if RetrievedAccount[3] == role:
+                logAction(action + " " + role , userName, False)
+                onSucces(RetrievedAccount[0])
+            else: 
+                logAction("Invalid search", action + " " + role, False)
+                print("User is not a " + role)
                 return
+        else: 
+            logAction("No result", action + " " + role, False)
+            print("No accounts found")
+            return
+    else:
+        logAction("Invalid input", "Username: " + userName, True)
+        print("🖕😂🖕 timeout left:")
+        countdown(30)
+        onValidationFail()
+
+def changeAccount(permissionLevel, targetRole):
+    
+    def refresh():
+        logOut()
+        logIn()
+
+    if checkRole(permissionLevel):
+        if checkSession():
+            options = {"1": updatePassword, "2": updateUsername, "3": updateRole}
+            for o in options: print(o + ': ' + niceFunctionName(options[o].__name__))
+            selection = input("Please select an option")
+            if checkServerGeneratedInput(options, selection):
+                otherAccountActionAttempt(niceFunctionName(options[selection].__name__), refresh, options[selection], targetRole)
+            return
+
+def changeAdvisor():
+    changeAccount(1, "advisor")
+
+def changeAdmin():
+    changeAccount(0, "admin")
+
+def updateRole(userId):
+    # remove assignable roles based on user level
+    options = ["superadmin","admin", "advisor"]
+    for x in range(getUserLevel(Session["userRole"])): options.pop(0)
+
+    # turn array to dictionary with numbers
+    dictOptions = {}
+    for i in range(len(options)): dictOptions[str(i)] = options[i]
+
+    # print options
+    for o in dictOptions: print(o + ": " + dictOptions[o])
+    selection = input("Select a role number to assign: ")
+
+    if checkServerGeneratedInput(dictOptions, selection):
+        queryDatabase('''UPDATE accounts SET type=:newRole WHERE id=:id''' , {"id": userId, "newRole": dictOptions[selection]})
+        logAction("User role changed",  "with userId: " + str(userId) + " by " + Session["userName"] , False)
+        print("User role change succesful")
+        return
+    return
+
+def updateUsername(userId):
+    usrName = provideProperUsername("Please provide a new username: ")
+    if validateUserInput(usrName):
+        queryDatabase('''UPDATE accounts SET username=:newUsername WHERE id=:id''' , {"id": userId, "newUsername": usrName})
+        logAction("Username changed", "with userId: " + str(userId) + " by " + Session["userName"], False)
+        print("Username change succesful")
+        return
+    else:
+        logAction("Attack on new username field", usrName, True)
+        print("🖕😂🖕 timeout left:")
+        countdown(30)
+        return
+
+def updatePassword(userId):
+    psw = provideProperPassword("Please provide a new password: ")
+    if validatePassword(psw):
+        repeatPsw = input("Please repeat the new password: ")
+        if validatePassword(repeatPsw):
+            if psw == repeatPsw:
+                queryDatabase('''UPDATE accounts SET password=:newPassword WHERE id=:id''' , {"id": userId, "newPassword": psw})
+                logAction("Password changed", "with userId: " + str(userId), False)
+                print("Password change succesful")
+                return
+            else:
+                print("Passwords do not match, please try again")
+                updatePassword()
         else:
             logAction("Attack on new password field", psw, True)
             print("🖕😂🖕 timeout left:")
             countdown(30)
             return
     else:
-        print(psw + " is not a valid password, please try again")
-        checkNewPassword()
+        logAction("Attack on new password field", psw, True)
+        print("🖕😂🖕 timeout left:")
+        countdown(30)
+        return
 
 def createUser(role: str):
-    userName = input("Enter Username for the new " + role + ": ")
-    password = input("Enter Password for the new " + role + ": ")
-    if validateUserInput(userName) and validatePassword(password):
-        print("Adding " + role)
-        #check if username already exists
-        queryDatabase('''INSERT INTO accounts(username, password, type) VALUES (:username, :password, :role)''', 
-        {
-            "username":userName, 
-            "password":password, 
-            "role": role
-        }
-    )
-        logAction("A new user was added", "Details: " + userName + ", " + role, False) 
+    userName = repeatUntilCorrect("Enter Username for the new " + role + ": ", "Inproper username", checkProperUserName)
+    if usernameAvailable(userName):
+        password= provideProperPassword("Enter Password for the new " + role + ": ")
+        if validateUserInput(userName) and validatePassword(password):
+            print("Adding " + role)
+            queryDatabase('''INSERT INTO accounts(username, password, type) VALUES (:username, :password, :role)''', 
+                {
+                    "username":userName, 
+                    "password":password, 
+                    "role": role
+                }
+            )
+            logAction("A new user was added", "Details: " + userName + ", " + role, False) 
+    else:
+        print("Username already exists!")
+
+def provideProperPassword(msg: str) -> str:
+    return repeatUntilCorrect(msg, "Inproper password", checkProperPassword)
+    
+def provideProperUsername(msg: str) -> str:
+    return repeatUntilCorrect(msg, "Inproper username", checkProperUserName)
+
+def repeatUntilCorrect(msg: str, errorMsg: str, rule) -> str:
+    inp = input(msg)
+    if rule(inp):
+        return inp
+    else:
+        print(errorMsg)
+        return repeatUntilCorrect(msg, errorMsg, rule)
 
 def checkProperPassword(psw):
     return bool(re.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@#$%^&*_\-+=`|\(){\}[\]:;'<>,.?\/\.])(?=.{8,30})").match(psw))
 
 def checkProperUserName(usrName):
-    return bool(re.match("^[a-z][\w'\.]{5,20}/gm", usrName, re.IGNORECASE))
+    return bool(re.match("^[a-z][\w'\.]{4,20}", usrName, re.IGNORECASE))
 
 def getAvailableOptions(userRole: str) -> None:
     if Session["loggedIn"]:
-        actions = [[deleteLogs, createAdmin],[readLogs, createAdvisor, checkAccountsInDatabase],[changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, printSession]]
+        actions = [[deleteLogs, createAdmin, changeAdmin],[deleteAccount, readLogs, createAdvisor, checkAccountsInDatabase, changeAdvisor],[changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, shutdown]]
         userLevel = getUserLevel(userRole)
         if userLevel < 0:
             # log him out
@@ -228,9 +325,13 @@ def niceFunctionName(fName: str) -> str:
     '''Changes name of function to a readable string'''
     return re.sub(r"(\w)([A-Z])", r"\1 \2", fName).lower()
 
+def shutdown():
+    sys.exit()
+
 def printOptions():
     if Session["loggedIn"]:
         options = getAvailableOptions(Session["userRole"])
+        print("\n##############################################################################\n")
         for o in options:
             print(str(options.index(o) + 1) + ". " + niceFunctionName(o.__name__))
         rawInput = input("Select an option by typing in the number: ")
@@ -238,9 +339,14 @@ def printOptions():
             if int(rawInput) in range(1,len(options) + 1):
                 selection = int(rawInput) - 1
                 selectionFunction = options[selection]
-                print("SeLeCtEd: " + niceFunctionName(selectionFunction.__name__))
+                print("Selected option: " + niceFunctionName(selectionFunction.__name__))
                 selectionFunction()
                 printOptions()
+            else:
+                print("Pick a valid option.")
+                printOptions()
+        except SystemExit: 
+            sys.exit()
         except:
             print("Invalid option")
             printOptions()
@@ -257,6 +363,26 @@ def deleteLogs():
             print("Deleted all the logs")
             logAction("Deleted all the logs", "user " + Session["userName"] + " deleted all logs with permission level " + Session["userRole"], False)
 
+
+
+
+
+
+def deleteAccount():
+    if checkRole(1):
+        if checkSession():
+            username = input("Enter the username of the user you want to delete: ")
+            result = queryDatabase('''SELECT * from accounts where username=:user''', {"user":username})
+            if getUserLevel(Session["userRole"]) < getUserLevel(result[0][3]):
+                if not (usernameAvailable(username)):
+                    queryDatabase('''DELETE FROM accounts WHERE username=:user''', {"user":username})
+                    print("User " + username + " has been deleted.")
+                else:
+                    print("That username does not exist.")
+                    return
+            else:
+                print("You don't have permission to delete this account.")
+                
 def checkSession() -> bool:
     if not Session["loggedIn"]:
         logAction("Suspicious session", Session["userName"], True)
@@ -299,21 +425,22 @@ def validateBlacklist(input):
 
 def validateWhiteList(input):
     '''returns True if input is valid '''
-    return bool(re.match("^[a-zA-Z0-9@. ]+$", input))
+    return bool(re.match("^$|^[a-zA-Z0-9@. ]+$", input))
 
 def checkServerGeneratedInput(options: dict, input):
+    '''Check if the input is in the given dictionary'''
     if input not in list(options.keys()):
         logAction("Tampering of server generated input", input, True)
-        print("Invalid server generated input")
+        print("Invalid server generated input.")
         return False
     else:
         return True
 
 def getCity():
     #ASK TEACHER ABOUT SERVER GENERATED INPUT (tommy : DROPDOWN)
-    cities = {1: "Rotterdam", 2: "Amsterdam", 3:"Bahrein", 4:"Barendrecht",5: "New York", 6: "Tarkov", 7:"Vancouver", 8: "London", 9:"Saigon", 10:"Aleppo"}
+    cities = {"1": "Rotterdam", "2": "Amsterdam", "3":"Bahrein", "4":"Barendrecht","5": "New York", "6": "Tarkov", "7":"Vancouver", "8": "London", "9":"Saigon", "10":"Aleppo"}
     for x in cities: print(str(x) + ": " + cities[x])
-    choice = int(input("Enter the number of the city you would like to pick: "))
+    choice = input("Enter the number of the city you would like to pick: ")
     if checkServerGeneratedInput(cities, choice):
         return cities[choice]
 
@@ -321,15 +448,14 @@ def getUserInput(regex: str, inputType: str, rule:str = ""):
     '''Takes a regular expression, a type of input, and an optional rule. Asks the user for input, validates it for irregularities, and returns '''
     def userInputClosure():
         inp = input("Enter " + inputType + " for the new client: ")
-        if bool(re.match(regex, inp)):
-            if validateUserInput(inp):
+        if validateUserInput(inp):
+            if bool(re.match(regex, inp)):
                 return inp
             else:
-                return None
+                print(rule)
+                return getUserInput(regex, inputType)()
         else:
-            print(rule)
-            return getUserInput(regex, inputType)()
-    
+            return None
     return userInputClosure
 
 def createClient():
@@ -359,11 +485,11 @@ def createClient():
 
 def getColumn(listOfOptions) -> str:
     for x in listOfOptions: print(str(x) + ": " + listOfOptions[x])
-    selection = int(input("Enter the number of the column you would like to look up: "))
+    selection = int(input("Enter the number of the column: "))
     if checkServerGeneratedInput(listOfOptions, selection):
         return listOfOptions[selection]
-    return None
-
+    return None  
+  
 def searchClientByProperty():
     column = getColumn({1: "id", 2:"name", 3:"street" ,4:"houseNumber" ,5:"zipCode" ,6:"city", 7:"emailAdress",8:"mobilePhone"})
     if column == None: return
@@ -388,15 +514,15 @@ def updateClientInformation():
     if checkSession() and checkRole(2):
         clientInfo = {}
         clientInfo["userId"] = int(input("Enter the ID of the client you would like to edit: "))
-        column = getColumn({1: "id", 2:"name", 3:"street" ,4:"houseNumber" ,5:"zipCode" ,6:"city", 7:"emailAdress",8:"mobilePhone"})
+        column = getColumn({1:"name", 2:"street", 3:"houseNumber", 4:"zipCode", 5:"city", 6:"emailAdress", 7:"mobilePhone"})
         if column == None : return
-
         if column == "mobilePhone":
             clientInfo["newValue"] = "31-6-" + getClientPropertyChangeFunction(column)()
         else:
             clientInfo["newValue"] = getClientPropertyChangeFunction(column)()
-            queryDatabase(bindColumns('''UPDATE clients SET col=:newValue WHERE id=:userId''', column), clientInfo)
-        return
+        logAction("Client data was changed", "ID: "+ str(clientInfo["userId"]), False)
+        print("Client data has been updated!")
+        queryDatabase(bindColumns('''UPDATE clients SET col=:newValue WHERE id=:userId''', column), clientInfo)
     return
 
 def bindColumns(sql:str, item):
@@ -404,7 +530,7 @@ def bindColumns(sql:str, item):
     return sql
 
 def createAdvisor():
-    if checkRole(1) and checkSession:
+    if checkRole(1) and checkSession():
         createUser("advisor")
 
 def createAdmin():
@@ -417,11 +543,27 @@ def checkAccountsInDatabase():
 
 def checkClientsInDatabase():
     result: list = queryDatabase('''SELECT id, name, street, houseNumber, zipCode, city, emailAdress, mobilePhone FROM clients''')
-    pprint.pprint(result)
+    for x in result:
+           print(x)
+
+def backUpDatabase():
+    datetime = getDateTime()
+    append =  "[" + datetime["Date"]+"][" + datetime["Time"].replace(":", "")+ "]"
+    copyfile(r"./database.db", "./backups/database"+ append +".db")
+
+def usernameAvailable(username:str):
+    '''Returns True if a username is not taken, returns false if a username already exists'''
+    if len(returnAccountByUsername(username)):
+        logAction("Username" + username + " already exists", "no extra information", False)   
+        return False
+    
+    logAction("Username" + username + " does not exist", "no extra information", False)   
+    return True
 
 
+    
 
-
+    
 #"UPDATE account SET password=:newPassword WHERE id=:id" , {"id": id, "newPassword": newPsw})
 #('''SELECT * FROM accounts WHERE username=:name AND password=:pass''' , {"name":userName, "pass":password})
 
@@ -441,4 +583,6 @@ if __name__ == "__main__":
     #createClient()
     # queryDatabase('''UPDATE accounts SET password=:newPassword WHERE id=:id''' , {"id": 5, "newPassword": "Daanneek!3"})
     printOptions()
+
     #readLogs()
+    #backUpDatabase()
