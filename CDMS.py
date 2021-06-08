@@ -302,7 +302,7 @@ def checkProperUserName(usrName):
 
 def getAvailableOptions(userRole: str) -> None:
     if Session["loggedIn"]:
-        actions = [[deleteLogs, createAdmin, changeAdmin],[deleteAccount, readLogs, createAdvisor, checkAccountsInDatabase, changeAdvisor],[searchClientByProperty, changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, shutdown]]
+        actions = [[deleteLogs, createAdmin, changeAdmin],[deleteAccount, readLogs, createAdvisor, checkAccountsInDatabase, changeAdvisor, deleteClient, backUpDatabase],[searchClientByProperty, changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, shutdown]]
         userLevel = getUserLevel(userRole)
         if userLevel < 0:
             print("User not found")
@@ -547,10 +547,19 @@ def checkClientsInDatabase():
         for x in result:
                 print(x)
 
+def deleteClient():
+    if checkSession() and checkRole(1):
+        clientId = input("Please provide a client ID to delete")
+        if validateUserInput(clientId):
+            queryDatabase('''DELETE FROM clients WHERE id=:id''', {"id":int(clientId)})
+            print("Client succesfully deleted")
+            logAction("Deleted client", "clientId: " + clientId, False)
+
 def backUpDatabase():
-    datetime = getDateTime()
-    append =  "[" + datetime["Date"]+"][" + datetime["Time"].replace(":", "")+ "]"
-    copyfile(r"./database.db", "./backups/database"+ append +".db")
+    if checkSession() and checkRole(1):
+        datetime = getDateTime()
+        append =  "[" + datetime["Date"]+"][" + datetime["Time"].replace(":", "")+ "]"
+        copyfile(r"./database.db", "./backups/database"+ append +".db")
 
 def usernameAvailable(username:str):
     '''Returns True if a username is not taken, returns false if a username already exists'''
