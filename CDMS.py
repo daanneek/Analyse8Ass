@@ -7,12 +7,6 @@ import datetime
 import time
 import sys
 from shutil import copyfile
-#print(sqlite3.connect('database.db').cursor().execute('''SELECT * FROM accounts''', {}).fetchall())
-
-# To update their own password
-# To add a new client to the system
-# To modify or update the information of a client in the system
-# To search and retrieve the information of a client 
 
 def logOut():
     logAction("User logged out", Session["userName"], False)
@@ -129,27 +123,34 @@ def countdown(t:int):
 
 def accountActionAttempt(attempt: int, action: str, onValidationFail, onSucces, lastAttempt:tuple=("","")):
     if attempt <= 0:
+        print("Too many " + action + " attempts, timeout left:")
         logAction("Too many failed " + action + " attempt", "Username: " + lastAttempt[0] + " Password: " + lastAttempt[1], True)
-        print("🖕😂🖕 too many " + action + " attempts, timeout left:")
-        countdown(10)
     else:
         # validate inputs
-        userName = input("Enter " + ("" if action == "Login" else "old ") + "Username: ")
-        password = input("Enter " + ("" if action == "Login" else "old ") + "Password: ")
-        if validateUserInput(userName) and validatePassword(password):
-            try:
-                logAction("User " + action , userName, False)
-                RetrievedAccount = retrieveAccount(userName, password)[0]
-                onSucces(RetrievedAccount)
-            except:
-                print(action + " was unsuccesful")
-                logAction("Unsuccesful" + action + "attempt", "Username: " + userName + " Password: " + password, False)
-                print("Attempt #" + str(4 - attempt))
-                accountActionAttempt(attempt-1, action, onValidationFail, onSucces, (userName,password))
+        if action == "Login":
+            userName = input("Enter " + ("" if action == "Login" else "old ") + "Username: ")
         else:
-            logAction("Invalid input", "Username: " + userName + " Password: " + password, True)
-            print("🖕😂🖕 timeout left:")
-            countdown(30)
+            userName = provideProperUsername("Enter " + ("" if action == "Login" else "old ") + "Username: ")
+        if validateUserInput(userName):
+            if action == "Login":
+                password = input("Enter " + ("" if action == "Login" else "old ") + "Password: ")
+            else:
+                password = provideProperPassword("Enter " + ("" if action == "Login" else "old ") + "Password: ")
+            if validatePassword(password):
+                try:
+                    logAction("User " + action , userName, False)
+                    RetrievedAccount = retrieveAccount(userName, password)[0]
+                    onSucces(RetrievedAccount)
+                except:
+                    print(action + " was unsuccesful")
+                    logAction("Unsuccesful" + action + "attempt", "Username: " + userName + " Password: " + password, False)
+                    print("Attempt #" + str(4 - attempt))
+                    accountActionAttempt(attempt-1, action, onValidationFail, onSucces, (userName,password))
+            else:
+                logAction("Invalid password input", "Password: " + password, True)
+                onValidationFail()
+        else:
+            logAction("Invalid username input", "Username: " + userName, True)
             onValidationFail()
 
 def logIn():
@@ -188,8 +189,6 @@ def otherAccountActionAttempt(action: str, onValidationFail, onSucces, role: str
             return
     else:
         logAction("Invalid input", "Username: " + userName, True)
-        print("🖕😂🖕 timeout left:")
-        countdown(30)
         onValidationFail()
 
 def changeAccount(permissionLevel, targetRole):
@@ -242,8 +241,6 @@ def updateUsername(userId):
         return
     else:
         logAction("Attack on new username field", usrName, True)
-        print("🖕😂🖕 timeout left:")
-        countdown(30)
         return
 
 def updatePassword(userId):
@@ -261,13 +258,9 @@ def updatePassword(userId):
                 updatePassword()
         else:
             logAction("Attack on new password field", psw, True)
-            print("🖕😂🖕 timeout left:")
-            countdown(30)
             return
     else:
         logAction("Attack on new password field", psw, True)
-        print("🖕😂🖕 timeout left:")
-        countdown(30)
         return
 
 def createUser(role: str):
@@ -309,12 +302,10 @@ def checkProperUserName(usrName):
 
 def getAvailableOptions(userRole: str) -> None:
     if Session["loggedIn"]:
-        actions = [[deleteLogs, createAdmin, changeAdmin],[deleteAccount, readLogs, createAdvisor, checkAccountsInDatabase, changeAdvisor],[changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, shutdown]]
+        actions = [[deleteLogs, createAdmin, changeAdmin],[deleteAccount, readLogs, createAdvisor, checkAccountsInDatabase, changeAdvisor],[searchClientByProperty, changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, shutdown]]
         userLevel = getUserLevel(userRole)
         if userLevel < 0:
-            # log him out
             print("User not found")
-            # PLACEHOLDER
         for x in range(userLevel):
             actions.pop(0)
         options = [item for sublist in actions for item in sublist]
@@ -401,7 +392,6 @@ def checkRole(requiredLevel: int) -> bool:
 def decryptQueryResult(queryResult):
     return list(map(lambda x : tuple(map(lambda y : decrypt(y), x)), queryResult))
 
-
 def readLogs():
     if(checkRole(1) and checkSession()):
         result: list = queryDatabase('''SELECT * FROM logFile''')
@@ -410,7 +400,7 @@ def readLogs():
 
 def validatePassword(input):
     '''returns True if input is valid '''
-    return validateBlacklist(input) and bool(re.match("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[~!@#$%^&*_\-+=|\():,.?/]).{8,30}$", input))
+    return validateBlacklist(input) and bool(re.match("^[a-zA-Z\d~!@#$%^&*_\-+=|\():,.?/]+$", input))
 
 def validateUserInput(input):
     '''returns True when the input is valid, returns False if the input is invalid, logs invalid activity, user is logged out.'''
@@ -425,7 +415,7 @@ def validateBlacklist(input):
 
 def validateWhiteList(input):
     '''returns True if input is valid '''
-    return bool(re.match("^$|^[a-zA-Z0-9@. ]+$", input))
+    return bool(re.match("^$|^[a-zA-Z0-9@.' ]+$", input))
 
 def checkServerGeneratedInput(options: dict, input):
     '''Check if the input is in the given dictionary'''
@@ -444,16 +434,16 @@ def getCity():
     if checkServerGeneratedInput(cities, choice):
         return cities[choice]
 
-def getUserInput(regex: str, inputType: str, rule:str = ""):
+def getUserInput(regex: str, inputType: str, rule:str = "", pattern:str = ""):
     '''Takes a regular expression, a type of input, and an optional rule. Asks the user for input, validates it for irregularities, and returns '''
     def userInputClosure():
-        inp = input("Enter " + inputType + " for the new client: ")
+        inp = input("Enter " + inputType + " for the new client " + pattern + ": ")
         if validateUserInput(inp):
             if bool(re.match(regex, inp)):
                 return inp
             else:
                 print(rule)
-                return getUserInput(regex, inputType)()
+                return getUserInput(regex, inputType, rule, pattern)()
         else:
             return None
     return userInputClosure
@@ -462,13 +452,13 @@ def createClient():
     '''Function to create a new user. takes input from getuserinput, and checks if values where returned. If so, a new client is added to the database'''
     if checkSession() and checkRole(2):
         clientInfo = {
-                    "name":getUserInput("^([a-zA-Z ]+)$", "name"), 
-                    "street":getUserInput("^[a-zA-Z ]+$", "street"), 
-                    "houseNumber": getUserInput("^\d+[a-zA-Z]*$", "house number"),
+                    "name":getUserInput("^([a-zA-Z ]+)$", "name", "A name consists only of letters.", "[Only letters]"), 
+                    "street":getUserInput("^[a-zA-Z ]+$", "street", "A street name consists only of letters."), 
+                    "houseNumber": getUserInput("^\d+[a-zA-Z]*$", "house number", "A house number can only be a number."),
                     "zipCode": getUserInput("(?i)^[1-9][0-9]{3}?(?!sa|sd|ss)[a-z]{2}$", "zipCode", "Follow this pattern: 1234AB"), 
                     "city": getCity,
-                    "emailAdress": getUserInput("^\w+([-+.']\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*$", "emailAdress"),
-                    "mobilePhone": getUserInput("^\d{8}$", "phone")
+                    "emailAdress": getUserInput("^\w+([-+.']\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*$", "emailAdress", "Follow this pattern: word@word.word"),
+                    "mobilePhone": getUserInput("^\d{8}$", "phone", "A phone number consists only of 8 digits." )
                 }
         for key in clientInfo:
             clientInfo[key] = clientInfo[key]()
@@ -491,24 +481,33 @@ def getColumn(listOfOptions) -> str:
     return None  
   
 def searchClientByProperty():
-    column = getColumn({1: "id", 2:"name", 3:"street" ,4:"houseNumber" ,5:"zipCode" ,6:"city", 7:"emailAdress",8:"mobilePhone"})
-    if column == None: return
-    keyword = input("Enter the keyword you would like to search with: ")   
-    if(column == "id"): keyword = int(keyword) 
-    result: list = queryDatabase(bindColumns('''SELECT * FROM clients WHERE col=:keyword''', column), {"keyword":keyword})
-    print(result)
-    return result
+    if checkSession() and checkRole(2):
+        column = getColumn({1: "id", 2:"name", 3:"street" ,4:"houseNumber" ,5:"zipCode" ,6:"city", 7:"emailAdress",8:"mobilePhone"})
+        if column == None: return
+        if column == "city":
+            keyword = getCity()
+        else:
+            keyword = input("Enter the keyword you would like to search with: ")   
+        if validateUserInput(keyword):
+            if(column == "id"): keyword = int(keyword) 
+            result: list = queryDatabase(bindColumns('''SELECT * FROM clients WHERE col=:keyword''', column), {"keyword":keyword})
+            if result != []:
+                print(result)
+                return result
+            else:
+                print("Client with this property was not found.")
+        return
 
 def getClientPropertyChangeFunction(property):
-    return {
-            "name":getUserInput("^([a-zA-Z ]+)$", "name"), 
-            "street":getUserInput("^[a-zA-Z ]+$", "street"), 
-            "houseNumber": getUserInput("^\d+[a-zA-Z]*$", "house number"),
-            "zipCode": getUserInput("(?i)^[1-9][0-9]{3}?(?!sa|sd|ss)[a-z]{2}$", "zipCode", "Follow this pattern: 1234AB"), 
-            "city": getCity,
-            "emailAdress": getUserInput("^\w+([-+.']\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*$", "emailAdress"),
-            "mobilePhone": getUserInput("^\d{8}$", "phone")
-        }[property]
+    return {  
+        "name":getUserInput("^([a-zA-Z ]+)$", "name", "A name consists only of letters.", "[Only letters]"), 
+        "street":getUserInput("^[a-zA-Z ]+$", "street", "A street name consists only of letters."), 
+        "houseNumber": getUserInput("^\d+[a-zA-Z]*$", "house number", "A house number can only be a number."),
+        "zipCode": getUserInput("(?i)^[1-9][0-9]{3}?(?!sa|sd|ss)[a-z]{2}$", "zipCode", "Follow this pattern: 1234AB"), 
+        "city": getCity,
+        "emailAdress": getUserInput("^\w+([-+.']\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*$", "emailAdress", "Follow this pattern: word@word.word"),
+        "mobilePhone": getUserInput("^\d{8}$", "phone", "A phone number consists only of 8 digits." )
+    }[property]
 
 def updateClientInformation():
     if checkSession() and checkRole(2):
@@ -538,13 +537,15 @@ def createAdmin():
         createUser("admin")
 
 def checkAccountsInDatabase():
-    result: list = queryDatabase('''SELECT username, type FROM accounts''')
-    pprint.pprint(result)
+    if checkSession() and checkRole(1):
+        result: list = queryDatabase('''SELECT username, type FROM accounts''')
+        pprint.pprint(result)
 
 def checkClientsInDatabase():
-    result: list = queryDatabase('''SELECT id, name, street, houseNumber, zipCode, city, emailAdress, mobilePhone FROM clients''')
-    for x in result:
-           print(x)
+    if checkSession() and checkRole(2):
+        result: list = queryDatabase('''SELECT id, name, street, houseNumber, zipCode, city, emailAdress, mobilePhone FROM clients''')
+        for x in result:
+                print(x)
 
 def backUpDatabase():
     datetime = getDateTime()
@@ -579,7 +580,6 @@ def usernameAvailable(username:str):
 # must have a combination of at least one lowercase letter, one uppercase letter, one digit, and one special character
 
 if __name__ == "__main__":
-    #print(searchClientByProperty())
     #createClient()
     # queryDatabase('''UPDATE accounts SET password=:newPassword WHERE id=:id''' , {"id": 5, "newPassword": "Daanneek!3"})
     printOptions()
