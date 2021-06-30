@@ -12,17 +12,23 @@ def logOut():
     logAction("User logged out", Session["userName"], False)
     Session.update({"userName":None, "userRole":None, "loggedIn":False})
 
+def encrypt(text):
+    if isinstance(text, (str)):
+        return viCipher(text, "Encrypt")
+    return text
+
+def decrypt(text):
+    if isinstance(text, str):
+        return viCipher(text)
+    return text
+
+# Change this so it will becomes a txt files
 def logAction(description:str, info:str, suspicious:bool):
     '''Logs suspicious activity in the database. If the action is suspicious, the user is logged out. booleans are stored as one's and zero's'''
-    queryDatabase('''INSERT INTO logFile(username, date, time, description, info, suspicious) VALUES (:username, :date, :time, :description, :info, :suspicious)''',
-         {
-            "username": Session["userName"], 
-            "date": getDateTime()["Date"], 
-            "time": getDateTime()["Time"], 
-            "description": description, 
-            "info": info, 
-            "suspicious": suspicious
-        }
+    logFile = open("logFile.txt", 'a')
+    logFile.write(
+        "username: " + Session["userName"] + " | date: " + getDateTime()["Date"] + " | time: " + getDateTime()["Time"] 
+        + " | description: " + description + " | info: " + info + " | suspicious: " + suspicious + "\n"
     )
     if suspicious:
         logOut()
@@ -41,16 +47,6 @@ def viCipher(text="", typ="d"):
         v = (txt_ints[i] - 32 + adder) % 95
         message += chr(v + 32)
     return message
-
-def encrypt(text):
-    if isinstance(text, (str)):
-        return viCipher(text, "Encrypt")
-    return text
-
-def decrypt(text):
-    if isinstance(text, str):
-        return viCipher(text)
-    return text
 
 def getDateTime():
     dt = datetime.datetime.today().now()
@@ -302,7 +298,7 @@ def checkProperUserName(usrName):
 
 def getAvailableOptions(userRole: str) -> None:
     if Session["loggedIn"]:
-        actions = [[deleteLogs, createAdmin, changeAdmin],[deleteAccount, readLogs, createAdvisor, checkAccountsInDatabase, changeAdvisor, deleteClient, backUpDatabase],[searchClientByProperty, changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, shutdown]]
+        actions = [[deleteLogs, createAdmin, changeAdmin],[deleteAccount, readLogs, createAdvisor, checkAccountsInDatabase, changeAdvisor, deleteClient, backUpDatabase, backUpLogFile],[searchClientByProperty, changeOwnPassword, checkClientsInDatabase, createClient, updateClientInformation],[logOut, shutdown]]
         userLevel = getUserLevel(userRole)
         if userLevel < 0:
             print("User not found")
@@ -346,18 +342,14 @@ def printOptions():
         logIn()
         printOptions()
 
+# Change this so it deleted the txt file
 def deleteLogs():
     '''Delete everything from the logfile'''
     if checkRole(0):
         if checkSession():
-            queryDatabase('''DELETE FROM logFile''')
+            logFile = open("logFile.txt", "w")
             print("Deleted all the logs")
             logAction("Deleted all the logs", "user " + Session["userName"] + " deleted all logs with permission level " + Session["userRole"], False)
-
-
-
-
-
 
 def deleteAccount():
     if checkRole(1):
@@ -392,11 +384,12 @@ def checkRole(requiredLevel: int) -> bool:
 def decryptQueryResult(queryResult):
     return list(map(lambda x : tuple(map(lambda y : decrypt(y), x)), queryResult))
 
+# Change this so it reads from a txt file
 def readLogs():
     if(checkRole(1) and checkSession()):
-        result: list = queryDatabase('''SELECT * FROM logFile''')
-        for x in result:
-            pprint.pprint(x)
+        result = open("logFile.txt", 'r')
+        for l in result:
+            print(l)
 
 def validatePassword(input):
     '''returns True if input is valid '''
@@ -560,6 +553,12 @@ def backUpDatabase():
         datetime = getDateTime()
         append =  "[" + datetime["Date"]+"][" + datetime["Time"].replace(":", "")+ "]"
         copyfile(r"./database.db", "./backups/database"+ append +".db")
+
+def backUpLogFile():
+    if checkSession() and checkRole(1):
+        datetime = getDateTime()
+        append =  "[" + datetime["Date"]+"][" + datetime["Time"].replace(":", "")+ "]"
+        copyfile(r"./logFile.txt", "./backups/logFile"+ append +".txt")
 
 def usernameAvailable(username:str):
     '''Returns True if a username is not taken, returns false if a username already exists'''
