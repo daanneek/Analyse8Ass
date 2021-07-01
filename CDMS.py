@@ -8,6 +8,7 @@ import time
 import sys
 from shutil import copyfile
 
+
 def logOut():
     logAction("User logged out", Session["userName"], False)
     Session.update({"userName":None, "userRole":None, "loggedIn":False})
@@ -25,11 +26,12 @@ def decrypt(text):
 # Change this so it will becomes a txt files
 def logAction(description:str, info:str, suspicious:bool):
     '''Logs suspicious activity in the database. If the action is suspicious, the user is logged out. booleans are stored as one's and zero's'''
-    logFile = open("logFile.txt", 'a')
-    logFile.write(
-        "username: " + Session["userName"] + " | date: " + getDateTime()["Date"] + " | time: " + getDateTime()["Time"] 
-        + " | description: " + description + " | info: " + info + " | suspicious: " + suspicious + "\n"
-    )
+    logFile = open("logFile.txt", 'a', encoding="utf-8")
+    logFile.write(encrypt(
+        "username: " + ("No user" if Session["userName"] == None else Session["userName"]) + " | date: " + getDateTime()["Date"] + " | time: " + getDateTime()["Time"] 
+        + " | description: " + description + " | info: " + info + " | suspicious: " + str(suspicious) + " |"
+    )+ "\n")
+    logFile.close()
     if suspicious:
         logOut()
         countdown(10)
@@ -389,7 +391,7 @@ def readLogs():
     if(checkRole(1) and checkSession()):
         result = open("logFile.txt", 'r')
         for l in result:
-            print(l)
+            print(decrypt(l)[:-1])
 
 def validatePassword(input):
     '''returns True if input is valid '''
@@ -590,6 +592,9 @@ def usernameAvailable(username:str):
 if __name__ == "__main__":
     #createClient()
     # queryDatabase('''UPDATE accounts SET password=:newPassword WHERE id=:id''' , {"id": 5, "newPassword": "Daanneek!3"})
+    print(encrypt("g"))
+    print(decrypt("g"))
+
     printOptions()
 
     #readLogs()
